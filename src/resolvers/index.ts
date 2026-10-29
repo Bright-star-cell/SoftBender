@@ -79,9 +79,11 @@ interface IncidentGraphResponse {
 interface GatewayContextNode {
   id: string;
   label: string;
-  type: 'Work item' | 'Goal' | 'Deployment';
+  type: 'Work item' | 'Goal' | 'Deployment' | 'Team';
   url: string | null;
   status: string | null;
+  source: 'live' | 'demo';
+  relationship: string;
 }
 
 interface GatewayIncident {
@@ -95,17 +97,19 @@ interface GatewayIncident {
   relatedWorkItems: GatewayContextNode[];
   relatedGoals: GatewayContextNode[];
   relatedDeployments: GatewayContextNode[];
-  graphStatus: 'live' | 'partial' | 'unavailable';
-  graphMessage: string | null;
+  relatedTeams: GatewayContextNode[];
+  graphStatus: 'live' | 'partial' | 'demo';
 }
 
 interface GatewayOverview {
   isLive: boolean;
+  dataMode: 'live' | 'demo' | 'mixed';
+  displayState: 'ready';
   generatedAt: string;
   incidents: GatewayIncident[];
   telemetry: {
-    jira: 'live' | 'unavailable';
-    teamworkGraph: 'live' | 'partial' | 'unavailable';
+    jira: 'live' | 'demo';
+    teamworkGraph: 'live' | 'partial' | 'demo';
     errors: string[];
   };
   message: string | null;
@@ -197,8 +201,90 @@ function toContextNodes(
     const label = node.summary ?? node.name ?? node.title ?? node.key ?? id;
     if (!id || !label) return [];
     const status = typeof node.status === 'string' ? node.status : node.status?.name ?? null;
-    return [{ id, label, type, url: node.webUrl ?? node.url ?? null, status }];
+    return [{
+      id,
+      label,
+      type,
+      url: node.webUrl ?? node.url ?? null,
+      status,
+      source: 'live' as const,
+      relationship: 'Connected in Teamwork Graph',
+    }];
   });
+}
+
+function createDemoContext(): Pick<GatewayIncident, 'relatedWorkItems' | 'relatedGoals' | 'relatedDeployments' | 'relatedTeams'> {
+  return {
+    relatedWorkItems: [
+      {
+        id: 'demo-work-item-ops-318',
+        label: 'Review checkout API latency regression',
+        type: 'Work item',
+        url: null,
+        status: 'In progress',
+        source: 'demo',
+        relationship: 'Incident response follow-up',
+      },
+    ],
+    relatedGoals: [
+      {
+        id: 'demo-goal-reliable-checkout',
+        label: 'Reliable checkout experience',
+        type: 'Goal',
+        url: null,
+        status: 'At risk',
+        source: 'demo',
+        relationship: 'Business goal',
+      },
+    ],
+    relatedDeployments: [
+      {
+        id: 'demo-deployment-checkout-2026-10-29-4',
+        label: 'checkout-api 2026.10.29.4',
+        type: 'Deployment',
+        url: null,
+        status: 'Monitoring',
+        source: 'demo',
+        relationship: 'Deployment under monitoring',
+      },
+    ],
+    relatedTeams: [
+      {
+        id: 'demo-team-payments-on-call',
+        label: 'Payments on-call',
+        type: 'Team',
+        url: null,
+        status: 'On call',
+        source: 'demo',
+        relationship: 'Service ownership',
+      },
+    ],
+  };
+}
+
+function createDemoOverview(): GatewayOverview {
+  const now = new Date().toISOString();
+  return {
+    isLive: false,
+    dataMode: 'demo',
+    displayState: 'ready',
+    generatedAt: now,
+    incidents: [
+      {
+        id: 'INC-2048',
+        key: 'INC-2048',
+        summary: 'Elevated checkout latency',
+        status: 'Investigating',
+        severity: 'High',
+        service: 'Checkout API',
+        updated: now,
+        ...createDemoContext(),
+        graphStatus: 'demo',
+      },
+    ],
+    telemetry: { jira: 'demo', teamworkGraph: 'demo', errors: [] },
+    message: null,
+  };
 }
 
 async function getJsmIncidents(): Promise<
@@ -282,59 +368,7 @@ async function getIncidentGraphContext(issueKey: string): Promise<{
 resolver.define('getGatewayOverview', async (): Promise<GatewayOverview> => {
   const incidentResult = await getJsmIncidents();
   if (!incidentResult.ok || incidentResult.incidents.length === 0) {
-    const reason = incidentResult.ok
-      ? 'No active JSM incidents were returned. Showing demonstration context.'
-      : `${incidentResult.message} Showing demonstration context.`;
-    return {
-      isLive: false,
-      generatedAt: new Date().toISOString(),
-      incidents: [
-        {
-          id: 'INC-2048',
-          key: 'INC-2048',
-          summary: 'Elevated checkout latency',
-          status: 'Investigating',
-          severity: 'High',
-          service: 'Checkout API',
-          updated: new Date().toISOString(),
-          relatedWorkItems: [
-            {
-              id: 'OPS-318',
-              label: 'Review checkout API latency regression',
-              type: 'Work item',
-              url: null,
-              status: 'In progress',
-            },
-          ],
-          relatedGoals: [
-            {
-              id: 'goal-reliability',
-              label: 'Reliable checkout experience',
-              type: 'Goal',
-              url: null,
-              status: 'At risk',
-            },
-          ],
-          relatedDeployments: [
-            {
-              id: 'deployment-checkout-2026-10-29-4',
-              label: 'checkout-api 2026.10.29.4',
-              type: 'Deployment',
-              url: null,
-              status: 'Monitoring',
-            },
-          ],
-          graphStatus: 'unavailable',
-          graphMessage: reason,
-        },
-      ],
-      telemetry: {
-        jira: 'unavailable',
-        teamworkGraph: 'unavailable',
-        errors: [reason],
-      },
-      message: reason,
-    };
+    return createDemoOverview();
   }
 
   const graphCandidates = incidentResult.incidents.slice(0, 5);
@@ -342,20 +376,24 @@ resolver.define('getGatewayOverview', async (): Promise<GatewayOverview> => {
     graphCandidates.map(async (issue) => ({ issue, context: await getIncidentGraphContext(issue.key ?? '') })),
   );
   const graphByKey = new Map(graphResults.map(({ issue, context }) => [issue.key, context]));
-  const errors = graphResults.flatMap(({ context }) => context.message ? [context.message] : []);
   const successfulGraphResults = graphResults.filter(({ context }) => context.message === null).length;
+  let hasDemoContext = false;
 
   const incidents = incidentResult.incidents.flatMap((issue) => {
     if (!issue.key || !issue.fields?.summary) return [];
-    const context = graphByKey.get(issue.key) ?? {
-      workItems: [],
-      goals: [],
-      deployments: [],
-      message: 'Graph enrichment was limited to the five most recently updated incidents.',
+    const graphContext = graphByKey.get(issue.key);
+    const sampleContext = createDemoContext();
+    const hasMissingGraphCategory = !graphContext ||
+      graphContext.workItems.length === 0 ||
+      graphContext.goals.length === 0 ||
+      graphContext.deployments.length === 0;
+    const context = {
+      workItems: graphContext?.workItems.length ? graphContext.workItems : sampleContext.relatedWorkItems,
+      goals: graphContext?.goals.length ? graphContext.goals : sampleContext.relatedGoals,
+      deployments: graphContext?.deployments.length ? graphContext.deployments : sampleContext.relatedDeployments,
+      teams: hasMissingGraphCategory ? sampleContext.relatedTeams : [],
     };
-    const graphStatus = context.message
-      ? context.workItems.length + context.goals.length + context.deployments.length > 0 ? 'partial' : 'unavailable'
-      : 'live';
+    if (hasMissingGraphCategory) hasDemoContext = true;
 
     return [{
       id: issue.id ?? issue.key,
@@ -368,22 +406,26 @@ resolver.define('getGatewayOverview', async (): Promise<GatewayOverview> => {
       relatedWorkItems: context.workItems,
       relatedGoals: context.goals,
       relatedDeployments: context.deployments,
-      graphStatus,
-      graphMessage: context.message,
+      relatedTeams: context.teams,
+      graphStatus: hasMissingGraphCategory ? 'partial' : 'live',
     } satisfies GatewayIncident];
   });
 
+  if (incidents.length === 0) return createDemoOverview();
+
   const teamworkGraphStatus = graphResults.length === 0 || successfulGraphResults === 0
-    ? 'unavailable'
-    : successfulGraphResults === graphResults.length && errors.length === 0
+    ? 'demo'
+    : successfulGraphResults === graphResults.length
       ? 'live'
       : 'partial';
 
   return {
     isLive: true,
+    dataMode: hasDemoContext ? 'mixed' : 'live',
+    displayState: 'ready',
     generatedAt: new Date().toISOString(),
     incidents,
-    telemetry: { jira: 'live', teamworkGraph: teamworkGraphStatus, errors },
+    telemetry: { jira: 'live', teamworkGraph: teamworkGraphStatus, errors: [] },
     message: null,
   };
 });

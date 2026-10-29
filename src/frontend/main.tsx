@@ -1,5 +1,5 @@
 import { invoke, view } from '@forge/bridge';
-import { Activity, AlertCircle, CircleDot, RefreshCw } from 'lucide-react';
+import { AlertCircle, CircleDot, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -20,6 +20,8 @@ type IssueContextResult =
 
 interface GatewayOverview {
   isLive: boolean;
+  dataMode: 'live' | 'demo' | 'mixed';
+  displayState: 'ready';
   generatedAt: string;
   incidents: Array<{
     id: string;
@@ -32,12 +34,12 @@ interface GatewayOverview {
     relatedWorkItems: GatewayContextNode[];
     relatedGoals: GatewayContextNode[];
     relatedDeployments: GatewayContextNode[];
-    graphStatus: 'live' | 'partial' | 'unavailable';
-    graphMessage: string | null;
+    relatedTeams: GatewayContextNode[];
+    graphStatus: 'live' | 'partial' | 'demo';
   }>;
   telemetry: {
-    jira: 'live' | 'unavailable';
-    teamworkGraph: 'live' | 'partial' | 'unavailable';
+    jira: 'live' | 'demo';
+    teamworkGraph: 'live' | 'partial' | 'demo';
     errors: string[];
   };
   message: string | null;
@@ -46,9 +48,11 @@ interface GatewayOverview {
 interface GatewayContextNode {
   id: string;
   label: string;
-  type: 'Work item' | 'Goal' | 'Deployment';
+  type: 'Work item' | 'Goal' | 'Deployment' | 'Team';
   url: string | null;
   status: string | null;
+  source: 'live' | 'demo';
+  relationship: string;
 }
 
 function formatUpdated(value: string | null): string {
@@ -177,6 +181,7 @@ function GatewayPage() {
     ...incident.relatedWorkItems,
     ...incident.relatedGoals,
     ...incident.relatedDeployments,
+    ...incident.relatedTeams,
   ].map((node) => ({ incidentKey: incident.key, node }))) ?? [];
 
   return (
@@ -186,24 +191,28 @@ function GatewayPage() {
           <p className="eyebrow">SOFTBENDER / OPERATIONS</p>
           <h1>Gateway overview</h1>
         </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label="Refresh gateway overview"
-          title="Refresh gateway overview"
-          disabled={isLoading}
-          onClick={() => void loadOverview()}
-        >
-          <RefreshCw size={17} aria-hidden="true" />
-        </button>
+        <div className="panel-actions">
+          {overview && (
+            <span className={`data-mode-pill data-mode-${overview.dataMode}`}>
+              {overview.dataMode === 'live'
+                ? 'Live data'
+                : overview.dataMode === 'mixed'
+                  ? 'Live Jira · Sample context'
+                  : 'Demo scenario'}
+            </span>
+          )}
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Refresh gateway overview"
+            title="Refresh gateway overview"
+            disabled={isLoading}
+            onClick={() => void loadOverview()}
+          >
+            <RefreshCw size={17} aria-hidden="true" />
+          </button>
+        </div>
       </header>
-
-      {overview && !overview.isLive && (
-        <p className="demo-notice" role="status">
-          <Activity size={15} aria-hidden="true" />
-          {overview.message ?? 'Live Jira incident data is currently unavailable.'}
-        </p>
-      )}
 
       {isLoading ? (
         <section className="state-panel" aria-live="polite">
@@ -217,12 +226,6 @@ function GatewayPage() {
         </section>
       ) : overview ? (
         <>
-          {overview.telemetry.teamworkGraph !== 'live' && (
-            <p className="telemetry-note" role="status">
-              Teamwork Graph: {overview.telemetry.teamworkGraph}. Jira incidents remain live.
-            </p>
-          )}
-
           {overview.incidents.length > 0 ? overview.incidents.map((incident) => (
             <section className="gateway-incident" aria-live="polite" key={incident.id}>
               <div className="gateway-incident-head">
@@ -236,11 +239,14 @@ function GatewayPage() {
                   {incident.status}
                 </span>
                 <span>{incident.service}</span>
-                <span>Graph: {incident.graphStatus}</span>
+                <span>
+                  Graph: {incident.graphStatus === 'live'
+                    ? 'Connected'
+                    : incident.graphStatus === 'partial'
+                      ? 'Partial context'
+                      : 'Sample context'}
+                </span>
               </div>
-              {incident.graphMessage && (
-                <p className="relationship-description incident-graph-message">{incident.graphMessage}</p>
-              )}
             </section>
           )) : (
             <section className="state-panel" aria-live="polite">
@@ -266,9 +272,7 @@ function GatewayPage() {
               </a>
             )) : (
               <p className="deployment-name">
-                {overview.telemetry.teamworkGraph === 'unavailable'
-                  ? 'Teamwork Graph deployment data is unavailable.'
-                  : 'No directly linked deployments were found.'}
+                No deployment links are available for this incident.
               </p>
             )}
           </section>
@@ -286,22 +290,27 @@ function GatewayPage() {
                   <div className="relationship-content">
                     <span className="relationship-type">{node.type}</span>
                     {node.url ? <a href={node.url} rel="noreferrer" target="_blank">{node.label}</a> : <strong>{node.label}</strong>}
-                    <span className="relationship-description">Linked to {incidentKey}</span>
+                    <span className="relationship-description">
+                      {node.source === 'demo' ? node.relationship : `Linked to ${incidentKey}`}
+                    </span>
                   </div>
                 </li>
                 ))}
               </ul>
             ) : (
               <p className="deployment-name">
-                {overview.telemetry.teamworkGraph === 'unavailable'
-                  ? 'Connected graph context is unavailable.'
-                  : 'No directly linked work items or goals were found.'}
+                No connected context is available for this incident.
               </p>
             )}
           </section>
 
           <footer className="issue-footer">
-            Jira telemetry: {overview.telemetry.jira}. Graph telemetry: {overview.telemetry.teamworkGraph}. Updated {formatUpdated(overview.generatedAt)}
+            {overview.dataMode === 'demo'
+              ? 'Illustrative scenario · '
+              : overview.dataMode === 'mixed'
+                ? 'Sample context supplements live Jira · '
+                : ''}
+            Updated {formatUpdated(overview.generatedAt)}
           </footer>
         </>
       ) : null}
