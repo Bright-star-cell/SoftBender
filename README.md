@@ -6,7 +6,7 @@
 
 **Incident context, where the work already happens.** SoftBender is a Jira Cloud app and Codegeist 2026 project taking a context-first approach to SRE response. Its first delivered capability is a fast, read-only issue brief in Jira; the longer-term direction is to connect operational changes to business impact and safe remediation.
 
-> **Current status:** The codebase includes a Jira issue panel and a Jira global page. The issue panel reads live Jira issue fields. The global page displays clearly labeled demo incident, deployment, and relationship data; it is not connected to Teamwork Graph or Bitbucket. Deploy and upgrade the Jira installation to make the new page available on a site. Revenue-risk scoring, Rovo, MCP, and automated remediation remain roadmap work.
+> **Current status:** The codebase includes a Jira issue panel and global page, a read-only Rovo risk agent/skill, and native `rovo:mcp` tools. Risk analysis reads Teamwork Graph-indexed Bitbucket pull requests and optional Jira issue signals, and can retrieve current-user team memberships from Teamwork Graph. The global page's incident overview remains demo data. Revenue exposure and automated remediation are not implemented. Deploy and upgrade the Jira installation to publish manifest changes.
 
 ## Why SoftBender
 
@@ -23,7 +23,7 @@ Open the SoftBender issue panel on a Jira issue to see:
 
 After deploying and upgrading the Jira installation, open **SoftBender Gateway** from Jira navigation to see an incident overview, related deployment, and connected-context list. This overview is demonstration data and is labeled as such in the UI.
 
-The issue panel fetches context when opened and offers a manual refresh. Neither surface polls or persists issue data. The current app does not change Jira issues or call Teamwork Graph, Bitbucket, or other third-party services.
+The issue panel fetches context when opened and offers a manual refresh. Neither surface polls or persists issue data. The current app does not change Jira issues or call the Bitbucket REST API; PR context is read from Teamwork Graph using the invoking user's access.
 
 ## System Architecture
 
@@ -89,7 +89,7 @@ flowchart LR
 - Issue keys are taken from Forge extension context, checked for a non-empty string, and encoded with Forge's `route` helper.
 - The resolver requests a fixed list of Jira fields rather than returning the full issue payload.
 - Jira authorization failures and unavailable issues are presented without exposing response bodies.
-- The current resolver is read-only. The manifest includes `read:jira-work` and `write:jira-work`; **the write scope is not currently used**. Review and remove it until a feature requires write access.
+- All configured scopes are read-only and site-scoped: `read:jira-work`, `read:graph:pull-request:external`, `read:graph:user:atlassian`, and `read:graph:team:atlassian`. Bitbucket workspace scopes are intentionally excluded because Forge does not allow workspace scopes to be combined with Jira site scopes in one app.
 - No issue data is stored by this feature.
 
 ## Performance and Resilience
@@ -210,12 +210,20 @@ Wait briefly and use the panel's refresh button. Automatic retries are not imple
 
 These are intended directions, not implemented or enabled features:
 
-- Teamwork Graph context linking work, people, goals, decisions, and outcomes
-- Bitbucket pull request and deployment correlation
+- Teamwork Graph traversal across work, goals, decisions, and outcomes beyond current-user team membership
+- Correlation discovery between Bitbucket pull requests and Jira issues, beyond user-supplied issue keys
 - Revenue exposure and business-impact estimation
-- Rovo agent and assignable skills for deployment-risk questions
-- MCP-based context access with explicit authentication and authorization boundaries
 - Human-reviewed remediation proposals and auditable execution controls
+
+## Rovo and MCP
+
+The Forge `rovo:agent`, `rovo:skill`, and `rovo:mcp` modules register the SoftBender Risk Sentinel, its skill instructions, and read-only action tools for incident status, deployment risk, and current-user team membership. `rovo:mcp` is Atlassian's hosted integration for Rovo Studio and compatible MCP clients; this app does not expose a custom unauthenticated JSON-RPC endpoint.
+
+The operational risk score is an explainable heuristic based on Teamwork Graph pull request status and, when supplied, Jira priority/status. It is not a revenue-risk calculation. Teamwork Graph access also returns the invoking user's Atlassian team memberships and does not establish a pull-request or service ownership relationship.
+
+## Marketplace Submission
+
+The Forge manifest and npm package include an app description, module names/descriptions, module icons, repository, license, and support links. Marketplace listing categories, screenshots, contact details, privacy policy, and the listing's square app icon are managed in the Atlassian Marketplace Partner Portal; Forge manifest schema does not expose those listing fields. Complete them there before submitting the listing.
 
 Each integration should add value without weakening least-privilege access, data boundaries, or responder control.
 

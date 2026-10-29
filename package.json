@@ -1,6 +1,25 @@
 {
   "name": "softbender",
-  "version": "1.0.0",
+  "version": "2.1.0",
+  "description": "Read-only Jira incident and Bitbucket deployment risk context for Atlassian Forge and Rovo.",
+  "author": "Bright-star-cell",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bright-star-cell/SoftBender.git"
+  },
+  "homepage": "https://github.com/Bright-star-cell/SoftBender#readme",
+  "bugs": {
+    "url": "https://github.com/Bright-star-cell/SoftBender/issues"
+  },
+  "keywords": [
+    "atlassian-forge",
+    "jira",
+    "rovo",
+    "teamwork-graph",
+    "incident-management",
+    "sre"
+  ],
   "private": true,
   "scripts": {
     "build": "vite build",
