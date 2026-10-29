@@ -21,7 +21,71 @@ interface ResolverContext {
   };
 }
 
+interface GatewayOverview {
+  source: 'demo';
+  generatedAt: string;
+  incident: {
+    key: string;
+    summary: string;
+    status: string;
+    severity: string;
+    service: string;
+  };
+  deployment: {
+    name: string;
+    status: string;
+  };
+  relationships: Array<{
+    id: string;
+    label: string;
+    type: string;
+    relationship: string;
+  }>;
+}
+
 const resolver = new Resolver();
+
+resolver.define('getGatewayOverview', async (): Promise<GatewayOverview> => ({
+  source: 'demo',
+  generatedAt: new Date().toISOString(),
+  incident: {
+    key: 'INC-2048',
+    summary: 'Elevated checkout latency',
+    status: 'Investigating',
+    severity: 'High',
+    service: 'Checkout API',
+  },
+  deployment: {
+    name: 'checkout-api 2026.10.29.4',
+    status: 'Monitoring',
+  },
+  relationships: [
+    {
+      id: 'service',
+      label: 'Checkout API',
+      type: 'Service',
+      relationship: 'impacted by incident',
+    },
+    {
+      id: 'deployment',
+      label: 'checkout-api 2026.10.29.4',
+      type: 'Deployment',
+      relationship: 'preceded incident',
+    },
+    {
+      id: 'goal',
+      label: 'Reliable checkout experience',
+      type: 'Goal',
+      relationship: 'supports service objective',
+    },
+    {
+      id: 'owner',
+      label: 'Payments on-call',
+      type: 'Team',
+      relationship: 'responsible for service',
+    },
+  ],
+}));
 
 resolver.define('getIssueContext', async ({ context }) => {
   const issueKey = (context as ResolverContext).extension?.issue?.key;

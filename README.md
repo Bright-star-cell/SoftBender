@@ -6,7 +6,7 @@
 
 **Incident context, where the work already happens.** SoftBender is a Jira Cloud app and Codegeist 2026 project taking a context-first approach to SRE response. Its first delivered capability is a fast, read-only issue brief in Jira; the longer-term direction is to connect operational changes to business impact and safe remediation.
 
-> **Current status:** The Jira issue panel and Jira issue-context resolver are implemented. Teamwork Graph, Bitbucket deployment correlation, revenue-risk scoring, Rovo, MCP, and automated remediation are roadmap work, not capabilities in the current deployment.
+> **Current status:** The codebase includes a Jira issue panel and a Jira global page. The issue panel reads live Jira issue fields. The global page displays clearly labeled demo incident, deployment, and relationship data; it is not connected to Teamwork Graph or Bitbucket. Deploy and upgrade the Jira installation to make the new page available on a site. Revenue-risk scoring, Rovo, MCP, and automated remediation remain roadmap work.
 
 ## Why SoftBender
 
@@ -21,7 +21,9 @@ Open the SoftBender issue panel on a Jira issue to see:
 - Assignee and last-updated time
 - Loading, unavailable, rate-limited, and retry states
 
-The panel fetches context when opened and offers a manual refresh. It does not poll, persist issue data, change Jira issues, or call third-party services.
+After deploying and upgrading the Jira installation, open **SoftBender Gateway** from Jira navigation to see an incident overview, related deployment, and connected-context list. This overview is demonstration data and is labeled as such in the UI.
+
+The issue panel fetches context when opened and offers a manual refresh. Neither surface polls or persists issue data. The current app does not change Jira issues or call Teamwork Graph, Bitbucket, or other third-party services.
 
 ## System Architecture
 
@@ -30,16 +32,24 @@ flowchart LR
 	subgraph Jira[Atlassian Jira Cloud]
 		User[Responder]
 		Issue[Jira issue view]
-		UI[SoftBender Custom UI<br/>React + TypeScript]
-		Bridge[Forge Bridge<br/>invoke getIssueContext]
+		Global[Jira global page<br/>SoftBender Gateway]
+		UI[Shared SoftBender Custom UI<br/>React + TypeScript]
+		Context[Forge view context<br/>moduleKey]
+		Bridge[Forge Bridge<br/>invoke resolver function]
 		Resolver[Forge resolver<br/>src/resolvers/index.ts]
 		JiraREST[Jira REST API v3]
 		User --> Issue
+		User --> Global
 		Issue --> UI
+		Global --> UI
+		UI --> Context
+		Context -->|issue panel| UI
+		Context -->|global page| UI
 		UI --> Bridge
 		Bridge --> Resolver
-		Resolver -->|api.asUser, selected fields| JiraREST
+		Resolver -->|getIssueContext: api.asUser| JiraREST
 		JiraREST -->|normalized issue DTO| Resolver
+		Resolver -->|getGatewayOverview: demo payload| Bridge
 		Resolver --> Bridge
 		Bridge --> UI
 	end
@@ -51,7 +61,8 @@ flowchart LR
 		Source --> Vite --> Resource
 	end
 
-	Manifest[Forge manifest] -->|binds panel, resource, resolver| Issue
+	Manifest[Forge manifest] -->|binds page, panel, resource, resolver| Issue
+	Manifest --> Global
 	Resource --> UI
 
 	subgraph Roadmap[Planned integrations - not in current request path]
@@ -66,11 +77,11 @@ flowchart LR
 
 ### Request lifecycle
 
-1. Jira opens the Custom UI issue panel and supplies its extension context.
-2. The UI invokes `getIssueContext` through `@forge/bridge`.
-3. The resolver validates the issue key and calls Jira REST API v3 with `api.asUser()`.
-4. Jira enforces the viewing user's access. SoftBender requests only summary, status, priority, issue type, assignee, and update time.
-5. The resolver returns a small normalized response. The UI renders the issue details or a recoverable error state.
+1. Jira opens either the issue panel or the global page and supplies Forge view context.
+2. The shared UI checks `moduleKey` to select the matching experience.
+3. The issue panel invokes `getIssueContext`; the global page invokes `getGatewayOverview` through `@forge/bridge`.
+4. `getIssueContext` validates the issue key and calls Jira REST API v3 with `api.asUser()`. `getGatewayOverview` returns a typed demonstration payload and makes no external API request.
+5. The UI renders live issue details or an explicitly labeled demo overview, with recoverable loading and error states.
 
 ## Security and Permissions
 
@@ -98,7 +109,7 @@ flowchart LR
 | Frontend | React, TypeScript, Tailwind CSS 4, Vite |
 | Forge UI integration | `@forge/bridge` |
 | Backend | Forge resolver and `@forge/api` |
-| Current product surface | Jira Cloud issue panel |
+| Current product surfaces | Jira Cloud issue panel and global page |
 
 ## Repository Layout
 
@@ -114,7 +125,7 @@ flowchart LR
 │   ├── resolvers/index.ts    # Jira issue-context resolver
 │   └── frontend/
 │       ├── index.html
-│       ├── main.tsx          # Issue panel and state handling
+│       ├── main.tsx          # Issue panel, global page, and state routing
 │       └── styles.css
 └── static/frontend/          # Built Forge Custom UI resource
 ```

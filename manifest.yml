@@ -12,6 +12,16 @@ modules:
       resolver:
         function: softbender-resolver
 
+  jira:globalPage:
+    - key: softbender-global-page
+      resource: softbender-frontend
+      resolver:
+        function: softbender-resolver
+      title: SoftBender Gateway
+      pages:
+        - title: Overview
+          route: /softbender
+
   function:
     - key: softbender-resolver
       handler: index.handler
