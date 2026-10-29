@@ -208,7 +208,7 @@ async function getJsmIncidents(): Promise<
   const jql = 'issuetype = Incident AND statusCategory != Done ORDER BY updated DESC';
   try {
     const response = await api.asApp().requestJira(
-      route`/rest/api/3/search?jql=${jql}&fields=summary,status,priority,issuetype,project,updated&maxResults=10`,
+      route`/rest/api/3/search/jql?jql=${jql}&fields=summary,status,priority,issuetype,project,updated&maxResults=10`,
     );
 
     if (response.status === 429) {
@@ -281,13 +281,59 @@ async function getIncidentGraphContext(issueKey: string): Promise<{
 
 resolver.define('getGatewayOverview', async (): Promise<GatewayOverview> => {
   const incidentResult = await getJsmIncidents();
-  if (!incidentResult.ok) {
+  if (!incidentResult.ok || incidentResult.incidents.length === 0) {
+    const reason = incidentResult.ok
+      ? 'No active JSM incidents were returned. Showing demonstration context.'
+      : `${incidentResult.message} Showing demonstration context.`;
     return {
       isLive: false,
       generatedAt: new Date().toISOString(),
-      incidents: [],
-      telemetry: { jira: 'unavailable', teamworkGraph: 'unavailable', errors: [incidentResult.message] },
-      message: incidentResult.message,
+      incidents: [
+        {
+          id: 'INC-2048',
+          key: 'INC-2048',
+          summary: 'Elevated checkout latency',
+          status: 'Investigating',
+          severity: 'High',
+          service: 'Checkout API',
+          updated: new Date().toISOString(),
+          relatedWorkItems: [
+            {
+              id: 'OPS-318',
+              label: 'Review checkout API latency regression',
+              type: 'Work item',
+              url: null,
+              status: 'In progress',
+            },
+          ],
+          relatedGoals: [
+            {
+              id: 'goal-reliability',
+              label: 'Reliable checkout experience',
+              type: 'Goal',
+              url: null,
+              status: 'At risk',
+            },
+          ],
+          relatedDeployments: [
+            {
+              id: 'deployment-checkout-2026-10-29-4',
+              label: 'checkout-api 2026.10.29.4',
+              type: 'Deployment',
+              url: null,
+              status: 'Monitoring',
+            },
+          ],
+          graphStatus: 'unavailable',
+          graphMessage: reason,
+        },
+      ],
+      telemetry: {
+        jira: 'unavailable',
+        teamworkGraph: 'unavailable',
+        errors: [reason],
+      },
+      message: reason,
     };
   }
 
