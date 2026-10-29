@@ -6,7 +6,7 @@
 
 **Incident context, where the work already happens.** SoftBender is a Jira Cloud app and Codegeist 2026 project taking a context-first approach to SRE response. Its first delivered capability is a fast, read-only issue brief in Jira; the longer-term direction is to connect operational changes to business impact and safe remediation.
 
-> **Current status:** The codebase includes a Jira issue panel and global page, a read-only Rovo risk agent/skill, and native `rovo:mcp` tools. Risk analysis reads Teamwork Graph-indexed Bitbucket pull requests and optional Jira issue signals, and can retrieve current-user team memberships from Teamwork Graph. The global page's incident overview remains demo data. Revenue exposure and automated remediation are not implemented. Deploy and upgrade the Jira installation to publish manifest changes.
+> **Current status:** The codebase includes a Jira issue panel and global page, a read-only Rovo risk agent/skill, and native `rovo:mcp` tools. The global page queries active Jira Service Management incidents and enriches up to five incidents with directly linked Teamwork Graph work items, goals, and deployments. Risk analysis reads Teamwork Graph-indexed Bitbucket pull requests and optional Jira issue signals. Revenue exposure and automated remediation are not implemented. Deploy and upgrade the Jira installation to publish manifest changes.
 
 ## Why SoftBender
 
@@ -21,7 +21,7 @@ Open the SoftBender issue panel on a Jira issue to see:
 - Assignee and last-updated time
 - Loading, unavailable, rate-limited, and retry states
 
-After deploying and upgrading the Jira installation, open **SoftBender Gateway** from Jira navigation to see an incident overview, related deployment, and connected-context list. This overview is demonstration data and is labeled as such in the UI.
+After deploying and upgrading the Jira installation, open **SoftBender Gateway** from Jira navigation to see active Jira Service Management incidents and available connected graph context. Missing graph links are reported as partial telemetry; they do not prevent live Jira incident data from appearing.
 
 The issue panel fetches context when opened and offers a manual refresh. Neither surface polls or persists issue data. The current app does not change Jira issues or call the Bitbucket REST API; PR context is read from Teamwork Graph using the invoking user's access.
 
@@ -38,6 +38,7 @@ flowchart LR
 		Bridge[Forge Bridge<br/>invoke resolver function]
 		Resolver[Forge resolver<br/>src/resolvers/index.ts]
 		JiraREST[Jira REST API v3]
+		Graph[Teamwork Graph API<br/>Cypher over GraphQL]
 		User --> Issue
 		User --> Global
 		Issue --> UI
@@ -49,7 +50,9 @@ flowchart LR
 		Bridge --> Resolver
 		Resolver -->|getIssueContext: api.asUser| JiraREST
 		JiraREST -->|normalized issue DTO| Resolver
-		Resolver -->|getGatewayOverview: demo payload| Bridge
+		Resolver -->|getGatewayOverview: api.asApp JQL| JiraREST
+		Resolver -->|per-incident optional traversal| Graph
+		Graph -->|partial node telemetry| Resolver
 		Resolver --> Bridge
 		Bridge --> UI
 	end
@@ -66,11 +69,7 @@ flowchart LR
 	Resource --> UI
 
 	subgraph Roadmap[Planned integrations - not in current request path]
-		TWG[Teamwork Graph]
-		Bitbucket[Bitbucket deployments]
 		Revenue[Revenue and business impact]
-		Rovo[Rovo agent and skills]
-		MCP[MCP context server]
 		Remediation[Approved remediation workflows]
 	end
 ```
@@ -80,8 +79,8 @@ flowchart LR
 1. Jira opens either the issue panel or the global page and supplies Forge view context.
 2. The shared UI checks `moduleKey` to select the matching experience.
 3. The issue panel invokes `getIssueContext`; the global page invokes `getGatewayOverview` through `@forge/bridge`.
-4. `getIssueContext` validates the issue key and calls Jira REST API v3 with `api.asUser()`. `getGatewayOverview` returns a typed demonstration payload and makes no external API request.
-5. The UI renders live issue details or an explicitly labeled demo overview, with recoverable loading and error states.
+4. `getIssueContext` validates the issue key and calls Jira REST API v3 with `api.asUser()`. `getGatewayOverview` queries unresolved Jira Service Management incidents with `api.asApp()`, then independently enriches up to five incidents through Teamwork Graph.
+5. Jira incidents remain visible if graph enrichment is unavailable. The UI reports Jira and graph telemetry separately, hides the demo banner when Jira data is live, and renders available linked work items, goals, and deployments.
 
 ## Security and Permissions
 
@@ -89,7 +88,7 @@ flowchart LR
 - Issue keys are taken from Forge extension context, checked for a non-empty string, and encoded with Forge's `route` helper.
 - The resolver requests a fixed list of Jira fields rather than returning the full issue payload.
 - Jira authorization failures and unavailable issues are presented without exposing response bodies.
-- All configured scopes are read-only and site-scoped: `read:jira-work`, `read:graph:pull-request:external`, `read:graph:user:atlassian`, and `read:graph:team:atlassian`. Bitbucket workspace scopes are intentionally excluded because Forge does not allow workspace scopes to be combined with Jira site scopes in one app.
+- All configured scopes are read-only and site-scoped: `read:jira-work`, `read:graph:issue:jira`, `read:graph:goal:atlassian`, `read:graph:deployment:external`, `read:graph:pull-request:external`, `read:graph:user:atlassian`, and `read:graph:team:atlassian`. Bitbucket workspace scopes are intentionally excluded because Forge does not allow workspace scopes to be combined with Jira site scopes in one app.
 - No issue data is stored by this feature.
 
 ## Performance and Resilience

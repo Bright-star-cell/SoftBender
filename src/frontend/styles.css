@@ -118,6 +118,16 @@ h1 {
   line-height: 1.5;
 }
 
+.telemetry-note {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border-left: 3px solid #4774a8;
+  color: #355476;
+  background: #edf4fb;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .demo-notice svg {
   flex: 0 0 auto;
   margin-top: 1px;
@@ -189,6 +199,10 @@ h1 {
 }
 
 .deployment-name {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0;
   padding: 16px 18px;
   border: 1px solid var(--line);
@@ -238,12 +252,24 @@ h1 {
   font-size: 11px;
 }
 
-.relationship-content strong {
+.relationship-content strong,
+.relationship-content > a {
   grid-column: 1;
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.relationship-content > a {
+  text-decoration-color: #9dc8b6;
+  text-underline-offset: 3px;
+}
+
+.incident-graph-message {
+  display: block;
+  margin: 13px 0 0;
+  text-align: left;
 }
 
 .relationship-description {

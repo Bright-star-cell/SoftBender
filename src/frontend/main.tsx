@@ -19,25 +19,36 @@ type IssueContextResult =
   | { ok: false; message: string };
 
 interface GatewayOverview {
-  source: 'demo';
+  isLive: boolean;
   generatedAt: string;
-  incident: {
+  incidents: Array<{
+    id: string;
     key: string;
     summary: string;
     status: string;
     severity: string;
     service: string;
-  };
-  deployment: {
-    name: string;
-    status: string;
-  };
-  relationships: Array<{
-    id: string;
-    label: string;
-    type: string;
-    relationship: string;
+    updated: string | null;
+    relatedWorkItems: GatewayContextNode[];
+    relatedGoals: GatewayContextNode[];
+    relatedDeployments: GatewayContextNode[];
+    graphStatus: 'live' | 'partial' | 'unavailable';
+    graphMessage: string | null;
   }>;
+  telemetry: {
+    jira: 'live' | 'unavailable';
+    teamworkGraph: 'live' | 'partial' | 'unavailable';
+    errors: string[];
+  };
+  message: string | null;
+}
+
+interface GatewayContextNode {
+  id: string;
+  label: string;
+  type: 'Work item' | 'Goal' | 'Deployment';
+  url: string | null;
+  status: string | null;
 }
 
 function formatUpdated(value: string | null): string {
@@ -159,6 +170,15 @@ function GatewayPage() {
     void loadOverview();
   }, []);
 
+  const deployments = overview?.incidents.flatMap((incident) =>
+    incident.relatedDeployments.map((deployment) => ({ incidentKey: incident.key, deployment })),
+  ) ?? [];
+  const connectedContext = overview?.incidents.flatMap((incident) => [
+    ...incident.relatedWorkItems,
+    ...incident.relatedGoals,
+    ...incident.relatedDeployments,
+  ].map((node) => ({ incidentKey: incident.key, node }))) ?? [];
+
   return (
     <main className="panel-shell gateway-shell">
       <header className="panel-header">
@@ -178,10 +198,12 @@ function GatewayPage() {
         </button>
       </header>
 
-      <p className="demo-notice">
-        <Activity size={15} aria-hidden="true" />
-        Demonstration data. Live Teamwork Graph and deployment connections are not configured.
-      </p>
+      {overview && !overview.isLive && (
+        <p className="demo-notice" role="status">
+          <Activity size={15} aria-hidden="true" />
+          {overview.message ?? 'Live Jira incident data is currently unavailable.'}
+        </p>
+      )}
 
       {isLoading ? (
         <section className="state-panel" aria-live="polite">
@@ -195,50 +217,91 @@ function GatewayPage() {
         </section>
       ) : overview ? (
         <>
-          <section className="gateway-incident" aria-live="polite">
-            <div className="gateway-incident-head">
-              <span className="issue-key">{overview.incident.key}</span>
-              <span className="severity-pill">{overview.incident.severity} severity</span>
-            </div>
-            <h2>{overview.incident.summary}</h2>
-            <div className="gateway-meta">
-              <span>
-                <CircleDot size={13} aria-hidden="true" />
-                {overview.incident.status}
-              </span>
-              <span>{overview.incident.service}</span>
-            </div>
-          </section>
+          {overview.telemetry.teamworkGraph !== 'live' && (
+            <p className="telemetry-note" role="status">
+              Teamwork Graph: {overview.telemetry.teamworkGraph}. Jira incidents remain live.
+            </p>
+          )}
+
+          {overview.incidents.length > 0 ? overview.incidents.map((incident) => (
+            <section className="gateway-incident" aria-live="polite" key={incident.id}>
+              <div className="gateway-incident-head">
+                <span className="issue-key">{incident.key}</span>
+                <span className="severity-pill">{incident.severity} priority</span>
+              </div>
+              <h2>{incident.summary}</h2>
+              <div className="gateway-meta">
+                <span>
+                  <CircleDot size={13} aria-hidden="true" />
+                  {incident.status}
+                </span>
+                <span>{incident.service}</span>
+                <span>Graph: {incident.graphStatus}</span>
+              </div>
+              {incident.graphMessage && (
+                <p className="relationship-description incident-graph-message">{incident.graphMessage}</p>
+              )}
+            </section>
+          )) : (
+            <section className="state-panel" aria-live="polite">
+              <p>No active Jira Service Management incidents were found.</p>
+            </section>
+          )}
 
           <section className="gateway-section" aria-labelledby="deployment-heading">
             <div className="section-heading">
-              <h2 id="deployment-heading">Related deployment</h2>
-              <span className="deployment-state">{overview.deployment.status}</span>
+              <h2 id="deployment-heading">Related deployments</h2>
+              <span className="deployment-state">{deployments.length} linked</span>
             </div>
-            <p className="deployment-name">{overview.deployment.name}</p>
+            {deployments.length > 0 ? deployments.map(({ incidentKey, deployment }) => (
+              <a
+                className="deployment-name"
+                href={deployment.url ?? undefined}
+                key={`${incidentKey}-${deployment.id}`}
+                rel="noreferrer"
+                target={deployment.url ? '_blank' : undefined}
+              >
+                <span>{deployment.label}</span>
+                <span className="deployment-state">{incidentKey}{deployment.status ? ` · ${deployment.status}` : ''}</span>
+              </a>
+            )) : (
+              <p className="deployment-name">
+                {overview.telemetry.teamworkGraph === 'unavailable'
+                  ? 'Teamwork Graph deployment data is unavailable.'
+                  : 'No directly linked deployments were found.'}
+              </p>
+            )}
           </section>
 
           <section className="gateway-section" aria-labelledby="relationships-heading">
             <div className="section-heading">
               <h2 id="relationships-heading">Connected context</h2>
-              <span className="context-count">{overview.relationships.length} links</span>
+              <span className="context-count">{connectedContext.length} links</span>
             </div>
-            <ul className="relationship-list">
-              {overview.relationships.map((relationship) => (
-                <li className="relationship-row" key={relationship.id}>
+            {connectedContext.length > 0 ? (
+              <ul className="relationship-list">
+                {connectedContext.map(({ incidentKey, node }) => (
+                  <li className="relationship-row" key={`${incidentKey}-${node.id}`}>
                   <span className="relationship-node" aria-hidden="true" />
                   <div className="relationship-content">
-                    <span className="relationship-type">{relationship.type}</span>
-                    <strong>{relationship.label}</strong>
-                    <span className="relationship-description">{relationship.relationship}</span>
+                    <span className="relationship-type">{node.type}</span>
+                    {node.url ? <a href={node.url} rel="noreferrer" target="_blank">{node.label}</a> : <strong>{node.label}</strong>}
+                    <span className="relationship-description">Linked to {incidentKey}</span>
                   </div>
                 </li>
-              ))}
-            </ul>
+                ))}
+              </ul>
+            ) : (
+              <p className="deployment-name">
+                {overview.telemetry.teamworkGraph === 'unavailable'
+                  ? 'Connected graph context is unavailable.'
+                  : 'No directly linked work items or goals were found.'}
+              </p>
+            )}
           </section>
 
           <footer className="issue-footer">
-            {overview.source === 'demo' ? 'Illustrative context, not live incident data.' : ''}
+            Jira telemetry: {overview.telemetry.jira}. Graph telemetry: {overview.telemetry.teamworkGraph}. Updated {formatUpdated(overview.generatedAt)}
           </footer>
         </>
       ) : null}

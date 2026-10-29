@@ -130,6 +130,9 @@ resources:
 permissions:
   scopes:
     - read:jira-work
+    - read:graph:issue:jira
+    - read:graph:goal:atlassian
+    - read:graph:deployment:external
     - read:graph:pull-request:external
     - read:graph:user:atlassian
     - read:graph:team:atlassian
